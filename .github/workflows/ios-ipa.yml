@@ -1,0 +1,125 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      export_method:
+        description: Signing profile type
+        required: true
+        type: choice
+        options:
+          - ad-hoc
+          - app-store-connect
+        default: ad-hoc
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect signing configuration
+        id: signing
+        env:
+          IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          if [[ -z "$IOS_CERTIFICATE_BASE64" || -z "$IOS_CERTIFICATE_PASSWORD" || -z "$IOS_PROVISIONING_PROFILE_BASE64" || -z "$IOS_TEAM_ID" ]]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Apple signing secrets are not configured. The workflow will compile an unsigned .app artifact; it will not be installable on iPhone."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compile iOS app
+        run: |
+          xcodebuild build \
+            -project iOS/DiscordBotClient.xcodeproj \
+            -scheme DiscordBotClient \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/DiscordBotClient.app" \
+            "$RUNNER_TEMP/DiscordBotClient-unsigned-app.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DiscordBotClient-unsigned-app
+          path: ${{ runner.temp }}/DiscordBotClient-unsigned-app.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Import distribution certificate and profile
+        if: steps.signing.outputs.configured == 'true'
+        env:
+          IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/ios-build.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          echo "$IOS_CERTIFICATE_BASE64" | base64 --decode > "$RUNNER_TEMP/distribution.p12"
+          echo "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$RUNNER_TEMP/distribution.p12" -P "$IOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print UUID' /dev/stdin < <(security cms -D -i "$RUNNER_TEMP/profile.mobileprovision"))
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c 'Print Name' /dev/stdin < <(security cms -D -i "$RUNNER_TEMP/profile.mobileprovision"))
+          cp "$RUNNER_TEMP/profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+          echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
+
+      - name: Archive for iPhone
+        if: steps.signing.outputs.configured == 'true'
+        env:
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          xcodebuild archive \
+            -project iOS/DiscordBotClient.xcodeproj \
+            -scheme DiscordBotClient \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/DiscordBotClient.xcarchive" \
+            DEVELOPMENT_TEAM="$IOS_TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY='Apple Distribution' \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME"
+
+      - name: Export signed IPA
+        if: steps.signing.outputs.configured == 'true'
+        env:
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+          EXPORT_METHOD: ${{ inputs.export_method || 'ad-hoc' }}
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>$EXPORT_METHOD</string>
+            <key>teamID</key><string>$IOS_TEAM_ID</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>provisioningProfiles</key><dict>
+              <key>com.aikochanai.discordbotclient</key><string>$PROFILE_NAME</string>
+            </dict>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/DiscordBotClient.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+          cp "$RUNNER_TEMP/export/DiscordBotClient.ipa" "$RUNNER_TEMP/DiscordBotClient.ipa"
+
+      - uses: actions/upload-artifact@v4
+        if: steps.signing.outputs.configured == 'true'
+        with:
+          name: DiscordBotClient-ipa
+          path: ${{ runner.temp }}/DiscordBotClient.ipa
+          if-no-files-found: error
+          retention-days: 14
