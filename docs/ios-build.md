@@ -13,24 +13,25 @@ If your goal is only to try the app on your own iPhone, a Mac with Xcode is the 
 
 ## GitHub Actions IPA
 
-To build without owning a Mac, extract `DiscordBotClient-iOS-build-source.zip`, create a GitHub repository, then push the extracted folder. For example, from PowerShell in the extracted folder:
+To build without owning a Mac, extract `DiscordBotClient-iOS-build-source.zip`, create a GitHub repository, then push the extracted folder. Run these commands from PowerShell in the extracted folder (omit `git init` if the repository is already initialized):
 
 ```powershell
 git init -b main
-git add .
+git add -- iOS .github/workflows/ios-ipa.yml docs/ios-build.md
+git config user.name "YOUR GITHUB NAME"
+git config user.email "YOUR VERIFIED OR GITHUB NOREPLY EMAIL"
 git commit -m "Add native iOS client"
 git remote add origin https://github.com/YOUR-NAME/YOUR-REPOSITORY.git
 git push -u origin main
 ```
 
-Then run **Actions → Build iOS IPA → Run workflow**. GitHub-hosted runners provide macOS virtual machines for Actions jobs ([runner docs](https://docs.github.com/en/actions/concepts/runners/github-hosted-runners)). With no signing secrets, it compiles the Release app and gives you an unsigned `.app` ZIP artifact for build verification; that app cannot be installed on an iPhone. With signing secrets configured, it also exports `DiscordBotClient.ipa` as a downloadable workflow artifact. A device-installable IPA needs an Apple Distribution certificate and a distribution provisioning profile that matches the bundle ID, selected export method, and registered device(s) for ad-hoc install. Add these repository secrets:
+If `origin` already exists, don't add it a second time; check it with `git remote -v` and keep using that remote. The explicit `git add` paths above avoid staging the desktop source if you run the commands in the larger desktop project folder.
 
-- `IOS_CERTIFICATE_BASE64`: base64-encoded `.p12` distribution certificate.
-- `IOS_CERTIFICATE_PASSWORD`: password for the `.p12` file.
-- `IOS_PROVISIONING_PROFILE_BASE64`: base64-encoded `.mobileprovision` profile.
-- `IOS_TEAM_ID`: Apple Developer team ID.
+Then run **Actions → Build unsigned iOS IPA → Run workflow**. GitHub-hosted runners provide macOS virtual machines for Actions jobs ([runner docs](https://docs.github.com/en/actions/concepts/runners/github-hosted-runners)). No Apple signing secrets are needed: the workflow compiles with code signing disabled and packages the app as `DiscordBotClient.ipa`. Download the `DiscordBotClient-unsigned-ipa` artifact from the completed run and extract the IPA from GitHub's artifact ZIP.
 
-Choose **ad-hoc** for registered-device sideloading or **app-store-connect** for App Store Connect distribution. The workflow intentionally fails before archiving if signing secrets are absent; it does not make or claim an unsigned IPA is installable. Never commit certificates, profiles, or bot tokens.
+The IPA is unsigned when built, but iOS still requires a valid signature to install and launch an app. Apple's device rejects a missing or invalid signature ([Apple code-signing docs](https://developer.apple.com/documentation/xcode/using-the-latest-code-signature-format)). Use a sideload tool such as [Sideloadly for Windows](https://sideloadly.io/): load the IPA, connect the iPhone, provide your Apple ID, and let Sideloadly sign and install it. Sideloadly says it supports free Apple IDs; those installs expire after 7 days and need refreshing/reinstalling. [Sideloadly](https://sideloadly.io/)
+
+Never put your Apple ID password, bot token, or other credentials in the repository.
 
 ## Implemented native bot workflows
 
