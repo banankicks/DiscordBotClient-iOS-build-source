@@ -135,7 +135,7 @@ struct ContentView: View {
                             guildIcon(guild, size: 34)
                             Text(guild.name).font(.caption.weight(.medium)).lineLimit(1)
                         }.padding(.horizontal, 10).padding(.vertical, 7)
-                            .background(model.selectedGuildID == guild.id ? .indigo.opacity(0.28) : .white.opacity(0.05), in: Capsule())
+                            .background(model.selectedGuildID == guild.id ? Color.indigo.opacity(0.28) : Color.white.opacity(0.05), in: Capsule())
                     }.buttonStyle(.plain)
                 }
             }.padding(.horizontal, 12).padding(.vertical, 8)
@@ -184,7 +184,7 @@ struct ContentView: View {
                 .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 18))
                 .submitLabel(.send).onSubmit(sendMessage)
             Button(action: sendMessage) {
-                Image(systemName: "arrow.up.circle.fill").font(.system(size: 29)).foregroundStyle(composeText.isEmpty ? .secondary : .indigo)
+                Image(systemName: "arrow.up.circle.fill").font(.system(size: 29)).foregroundStyle(composeText.isEmpty ? Color.gray : Color.indigo)
             }.disabled(composeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .padding(.bottom, 4)
         }.padding(.horizontal, 12).padding(.vertical, 9)
@@ -382,7 +382,7 @@ private struct MessageRow: View {
             }
             Spacer(minLength: 8)
         }
-        .padding(10).background(isOwn ? .indigo.opacity(0.09) : .white.opacity(0.035), in: RoundedRectangle(cornerRadius: 13))
+        .padding(10).background(isOwn ? Color.indigo.opacity(0.09) : Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 13))
     }
 
     private var avatar: some View {
