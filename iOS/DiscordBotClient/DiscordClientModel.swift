@@ -99,14 +99,14 @@ final class DiscordClientModel: ObservableObject {
         do {
             let changed: Message = try await request("/channels/\(message.channel_id)/messages/\(message.id)", method: "PATCH", body: ["content": content])
             replace(changed)
-        } catch { error = error.localizedDescription }
+        } catch { self.error = error.localizedDescription }
     }
 
     func delete(_ message: Message) async {
         do {
             try await perform("/channels/\(message.channel_id)/messages/\(message.id)", method: "DELETE")
             messages.removeAll { $0.id == message.id }
-        } catch { error = error.localizedDescription }
+        } catch { self.error = error.localizedDescription }
     }
 
     private func openGateway() async {
